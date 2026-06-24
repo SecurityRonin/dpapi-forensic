@@ -19,4 +19,6 @@ pub enum DpapiError {
     HmacMismatch,
     #[error("UTF-16 decode error")]
     Utf16Error,
+    #[error("domain RSA backup-key path is not implemented")]
+    DomainBackupUnsupported,
 }
