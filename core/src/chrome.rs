@@ -80,10 +80,24 @@ pub fn decrypt_v10_cookie(
 /// Errors loudly — malformed base64 ([`DpapiError::Base64Error`]) or a missing
 /// `DPAPI` prefix ([`DpapiError::MissingDpapiPrefix`], which names the bytes that
 /// were actually present) — rather than guessing.
-pub fn parse_local_state_encrypted_key(_encrypted_key_b64: &[u8]) -> Result<Vec<u8>, DpapiError> {
-    // RED stub: not implemented. Returns an empty blob so downstream decode fails
-    // a value check rather than fabricating output.
-    Ok(Vec::new())
+pub fn parse_local_state_encrypted_key(encrypted_key_b64: &[u8]) -> Result<Vec<u8>, DpapiError> {
+    use base64::{engine::general_purpose::STANDARD, Engine as _};
+
+    use std::fmt::Write as _;
+
+    let decoded = STANDARD
+        .decode(encrypted_key_b64)
+        .map_err(|_| DpapiError::Base64Error)?;
+    if let Some(blob) = decoded.strip_prefix(b"DPAPI") {
+        Ok(blob.to_vec())
+    } else {
+        // Surface the bytes that WERE there (Show-the-unrecognized-value).
+        let mut shown = String::new();
+        for b in decoded.iter().take(8) {
+            let _ = write!(shown, "{b:02x}");
+        }
+        Err(DpapiError::MissingDpapiPrefix(shown))
+    }
 }
 
 /// Decrypt a Chrome/Edge `Local State` cookie key from its DPAPI blob bytes.
@@ -97,12 +111,20 @@ pub fn parse_local_state_encrypted_key(_encrypted_key_b64: &[u8]) -> Result<Vec<
 /// [`DpapiError`] — it never returns garbage or a fabricated key. A plaintext of
 /// the wrong length is rejected with [`DpapiError::UnexpectedKeyLength`].
 pub fn decrypt_local_state_key(
-    _blob_bytes: &[u8],
-    _master_key: &[u8],
+    blob_bytes: &[u8],
+    master_key: &[u8],
 ) -> Result<[u8; 32], DpapiError> {
-    // RED stub: not implemented. Returns a zero key (deliberately wrong) so the
-    // oracle value-match test FAILS; it does NOT fabricate a plausible key.
-    Ok([0u8; 32])
+    let blob = crate::blob::parse_dpapi_blob(blob_bytes)?;
+    // No entropy for the Local State key blob. A wrong/absent master key fails the
+    // blob's Sign-HMAC inside decrypt_dpapi_blob and propagates as an error here.
+    let plaintext = crate::decrypt::decrypt_dpapi_blob(&blob, master_key, None)?;
+    plaintext
+        .as_slice()
+        .try_into()
+        .map_err(|_| DpapiError::UnexpectedKeyLength {
+            expected: 32,
+            got: plaintext.len(),
+        })
 }
 
 #[cfg(test)]
