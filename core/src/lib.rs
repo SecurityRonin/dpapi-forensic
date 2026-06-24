@@ -18,6 +18,7 @@ pub mod credential;
 pub mod decrypt;
 pub mod error;
 pub mod masterkey;
+pub mod vault;
 
 pub use blob::{parse_dpapi_blob, DpapiBlob};
 pub use chrome::{
@@ -31,4 +32,8 @@ pub use masterkey::{
     derive_master_key_from_domain_backup, derive_master_key_from_password,
     derive_master_key_from_prekey, parse_master_key, parse_masterkey_file, prekey_from_password,
     prekey_from_sha1, MasterKey, MasterKeyFile, MASTER_KEY_LEN,
+};
+pub use vault::{
+    decrypt_vcrd_attribute, decrypt_vpol_keys, parse_internet_explorer, parse_vcrd_attributes,
+    parse_vpol_file, VaultVpolKeys, VcrdAttribute, WebCredential,
 };

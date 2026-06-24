@@ -33,6 +33,35 @@ the generator below reproduces them.
     same 32-byte key via Python `cryptography` AESGCM (bit-for-bit compatible with
     RustCrypto `aes-gcm`). Expected plaintext: `forensic-session-token-42`.
 
+## Vault path (step-2, deliverable 3)
+
+The Vault RED/GREEN test (`core/src/vault.rs`) pins decoded attributes against a
+vector minted **through impacket 0.13.1** (`impacket.dpapi.VAULT_VPOL`,
+`VAULT_VPOL_KEYS`, `VAULT_VCRD`, `VAULT_INTERNET_EXPLORER`, plus the `VAULT` action
+flow in `impacket/examples/dpapi.py`). Classification: `SYNTHETIC` (minted), ground
+truth established by an **independent oracle** (impacket parses the VPOL keys and
+AES-CBC-decrypts the VCRD attribute back to the same web-credential fields) — tier-2.
+
+#### build_vault_vector.py
+
+- **Generator** (verbatim, committed): `tests/data/build_vault_vector.py`
+- **Run**: `python3 tests/data/build_vault_vector.py` (needs `impacket==0.13.1`
+  and `pycryptodome`; validated with anaconda Python 3.12 + impacket 0.13.1).
+- **MD5**: `4f6250bd83b7a25b7ac8a477978e7ba0`
+- **Two-stage chain pinned**:
+  - **Policy** — `VPOL_FILE_HEX` is an impacket `VAULT_VPOL` wrapping an inner DPAPI
+    blob (`VPOL_BLOB_HEX`, CALG_SHA_512 / AES-256, no entropy). impacket
+    `VAULT_VPOL.Blob.decrypt(master_key)` yields `VAULT_VPOL_KEYS`, from which
+    `Key1.bKeyBlob.bKey` / `Key2...` are the two 32-byte AES keys
+    (`VPOL_KEY1_HEX` / `VPOL_KEY2_HEX`). The script asserts this round-trip.
+  - **Record** — `VCRD_FILE_HEX` is an impacket `VAULT_VCRD` with one attribute
+    (IV `ATTR_IV_HEX`). AES-CBC-decrypting `attribute['Data']` with `Key1` (impacket's
+    `VAULT` example flow) yields a `VAULT_INTERNET_EXPLORER` cleartext that impacket
+    decodes to Username `alice@example.com`, Resource `https://portal.example.com`,
+    Password `V@ultP4ss!`. The script prints these from `VAULT_INTERNET_EXPLORER`, so
+    the expected strings are genuinely impacket output, not self-authored.
+  - Master key — the same tier-1 impacket-validated key (`9828d987...81b0ce3`).
+
 ## Credential Manager path (step-2, deliverable 2)
 
 The Credential Manager RED/GREEN test (`core/src/credential.rs`) pins decoded fields
