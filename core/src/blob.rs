@@ -1,4 +1,4 @@
-use forensicnomicon::dpapi::hash_alg_info;
+use forensicnomicon::dpapi::{hash_alg_info, PROVIDER_GUID_BYTES};
 
 use crate::error::DpapiError;
 
@@ -79,7 +79,24 @@ pub fn parse_dpapi_blob(data: &[u8]) -> Result<DpapiBlob, DpapiError> {
     if version != 1 && version != 2 {
         return Err(DpapiError::UnsupportedVersion(version));
     }
-    pos += 16; // provider GUID
+    // The 16 bytes after the version are the DPAPI provider GUID; a blob that
+    // is not DPAPI-protected is rejected loudly rather than mis-parsed.
+    let provider_guid: [u8; 16] =
+        data[pos..pos + 16]
+            .try_into()
+            .map_err(|_| DpapiError::TooShort {
+                needed: pos + 16,
+                got: data.len(),
+            })?;
+    if provider_guid != PROVIDER_GUID_BYTES {
+        use core::fmt::Write as _;
+        let hex = provider_guid.iter().fold(String::new(), |mut s, b| {
+            let _ = write!(s, "{b:02x}");
+            s
+        });
+        return Err(DpapiError::NotDpapiProvider(hex));
+    }
+    pos += 16;
     let _mk_version = read_u32(data, &mut pos);
     let master_key_guid: [u8; 16] =
         data[pos..pos + 16]
@@ -161,8 +178,6 @@ fn read_u32(data: &[u8], pos: &mut usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use forensicnomicon::dpapi::PROVIDER_GUID_BYTES;
-
     use super::*;
 
     fn hex(s: &str) -> Vec<u8> {
