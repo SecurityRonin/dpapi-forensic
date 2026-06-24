@@ -33,6 +33,30 @@ the generator below reproduces them.
     same 32-byte key via Python `cryptography` AESGCM (bit-for-bit compatible with
     RustCrypto `aes-gcm`). Expected plaintext: `forensic-session-token-42`.
 
+## Wi-Fi path (step-2, deliverable 4)
+
+The Wi-Fi RED/GREEN test (`core/src/wifi.rs`) pins the decrypted PSK against a
+vector minted **through impacket 0.13.1** (`impacket.dpapi.DPAPI_BLOB`).
+Classification: `SYNTHETIC` (minted), ground truth established by an **independent
+oracle** (impacket `DPAPI_BLOB(blob).decrypt` yields the same PSK) — tier-2.
+
+#### build_wifi_vector.py
+
+- **Generator** (verbatim, committed): `tests/data/build_wifi_vector.py`
+- **Run**: `python3 tests/data/build_wifi_vector.py` (needs `impacket==0.13.1`
+  and `pycryptodome`; validated with anaconda Python 3.12 + impacket 0.13.1).
+- **MD5**: `3ff3598dd6c42c3fb5868d2b0699e96d`
+- **What it pins**:
+  - A WLAN profile `<keyMaterial>` is the **hex-encoded bytes of a DPAPI blob**
+    (CALG_SHA_512 / AES-256, no entropy) over the PSK as UTF-8 + a trailing NUL.
+    `KEY_MATERIAL_HEX` is that hex; the inner blob is minted by reproducing the
+    inverse of `DPAPI_BLOB.decrypt`.
+  - **Confirmed by impacket**: `DPAPI_BLOB(unhex(KEY_MATERIAL_HEX)).decrypt(mk)`
+    returns `b"CorrectHorseBatteryStaple\x00"`; stripping the NUL and UTF-8-decoding
+    gives PSK `CorrectHorseBatteryStaple`. The script asserts this round-trip, so
+    the expected PSK is genuine impacket output, not self-authored.
+  - Master key — the same tier-1 impacket-validated key (`9828d987...81b0ce3`).
+
 ## Vault path (step-2, deliverable 3)
 
 The Vault RED/GREEN test (`core/src/vault.rs`) pins decoded attributes against a
