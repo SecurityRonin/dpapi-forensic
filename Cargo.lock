@@ -138,6 +138,7 @@ dependencies = [
  "cbc",
  "cipher",
  "des",
+ "forensicnomicon",
  "hmac",
  "sha1",
  "sha2",
@@ -150,6 +151,10 @@ version = "0.1.0"
 dependencies = [
  "dpapi-core",
 ]
+
+[[package]]
+name = "forensicnomicon"
+version = "0.10.0"
 
 [[package]]
 name = "generic-array"

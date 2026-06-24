@@ -1,6 +1,10 @@
+use forensicnomicon::dpapi::hash_alg_info;
+
 use crate::error::DpapiError;
 
-/// Properties of a DPAPI hash algorithm, mirroring impacket's `ALGORITHMS_DATA`.
+/// DPAPI hash-algorithm parameters. Re-exported from forensicnomicon, the fleet
+/// knowledge crate that owns the impacket `ALGORITHMS_DATA` block-size facts;
+/// this crate owns only the parsing + crypto that consume them.
 ///
 /// Two distinct block sizes are in play and must not be conflated:
 /// * `derive_block_len` is the table's salt/block field used by `deriveKey`
@@ -8,46 +12,22 @@ use crate::error::DpapiError;
 ///   `CALG_SHA_512` (0x800e).
 /// * `hash_block_len` is the underlying hash module's block size used by the
 ///   integrity check (`SHA1.block_size`=64, `SHA512.block_size`=128).
-///
-/// For `CALG_HMAC` (0x8009) these differ (64 vs 128), so both are tracked.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct HashAlg {
-    /// SHA512 module if true, SHA1 if false.
-    pub is_sha512: bool,
-    /// Output digest length in bytes (20 for SHA1, 64 for SHA512).
-    pub digest_len: usize,
-    /// `deriveKey` salt/block field (impacket `ALGORITHMS_DATA[..][4]`).
-    pub derive_block_len: usize,
-    /// Underlying hash module block size (used by the integrity HMAC).
-    pub hash_block_len: usize,
-}
+pub use forensicnomicon::dpapi::HashAlgInfo as HashAlg;
 
 /// Resolve a DPAPI `algId` (the hash algorithm) to its properties.
 ///
-/// Recognises `CALG_SHA` (0x8004 → SHA1), `CALG_HMAC` (0x8009 → SHA512 module,
-/// 64-byte derive block) and `CALG_SHA_512` (0x800e → SHA512, 128-byte derive
-/// block). Any other value falls back to SHA1, matching the historical default.
+/// Delegates the `algId → params` knowledge to
+/// [`forensicnomicon::dpapi::hash_alg_info`] — recognising `CALG_SHA1`
+/// (`0x8004` → SHA1), `CALG_HMAC` (`0x8009` → SHA512 module, 64-byte derive
+/// block) and `CALG_SHA_512` (`0x800e` → SHA512, 128-byte derive block). Any
+/// other value falls back to SHA1, matching the historical default.
 pub fn hash_alg(alg_id_hash: u32) -> HashAlg {
-    match alg_id_hash {
-        0x8009 => HashAlg {
-            is_sha512: true,
-            digest_len: 64,
-            derive_block_len: 64,
-            hash_block_len: 128,
-        },
-        0x800E => HashAlg {
-            is_sha512: true,
-            digest_len: 64,
-            derive_block_len: 128,
-            hash_block_len: 128,
-        },
-        _ => HashAlg {
-            is_sha512: false,
-            digest_len: 20,
-            derive_block_len: 64,
-            hash_block_len: 64,
-        },
-    }
+    hash_alg_info(alg_id_hash).unwrap_or(HashAlg {
+        is_sha512: false,
+        digest_len: 20,
+        derive_block_len: 64,
+        hash_block_len: 64,
+    })
 }
 
 /// A parsed DPAPI data blob, mirroring impacket's `DPAPI_BLOB` structure.
@@ -181,6 +161,8 @@ fn read_u32(data: &[u8], pos: &mut usize) -> u32 {
 
 #[cfg(test)]
 mod tests {
+    use forensicnomicon::dpapi::PROVIDER_GUID_BYTES;
+
     use super::*;
 
     fn hex(s: &str) -> Vec<u8> {
@@ -202,7 +184,7 @@ mod tests {
     ) -> Vec<u8> {
         let mut v = Vec::new();
         v.extend_from_slice(&2u32.to_le_bytes()); // version
-        v.extend_from_slice(&[0u8; 16]); // provider GUID
+        v.extend_from_slice(&PROVIDER_GUID_BYTES); // DPAPI provider GUID
         v.extend_from_slice(&0u32.to_le_bytes()); // master key version
         v.extend_from_slice(&[0xAAu8; 16]); // master key GUID
         v.extend_from_slice(&0u32.to_le_bytes()); // flags

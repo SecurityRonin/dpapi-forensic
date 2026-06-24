@@ -5,6 +5,8 @@ use hmac::{Hmac, Mac};
 use sha1::{Digest, Sha1};
 use sha2::Sha512;
 
+use forensicnomicon::dpapi::{cipher_alg_info, CALG_AES_256};
+
 use crate::blob::{hash_alg, HashAlg};
 use crate::error::DpapiError;
 
@@ -25,35 +27,6 @@ pub fn verify_hmac_sha1(key: &[u8], data: &[u8], expected: &[u8]) -> Result<(), 
     mac.update(data);
     mac.verify_slice(expected)
         .map_err(|_| DpapiError::HmacMismatch)
-}
-
-/// Cipher (encryption algorithm) parameters from the blob's `alg_id_encrypt`.
-///
-/// `key_len`/`iv_len` are the cipher's key and IV sizes. The IV is always zeros
-/// (impacket: `iv=b'\x00'*IVLen`).
-struct CryptAlg {
-    key_len: usize,
-    iv_len: usize,
-    block_len: usize,
-    is_aes256: bool,
-}
-
-fn crypt_alg(alg_id_encrypt: u32) -> Option<CryptAlg> {
-    match alg_id_encrypt {
-        0x6610 => Some(CryptAlg {
-            key_len: 32,
-            iv_len: 16,
-            block_len: 16,
-            is_aes256: true,
-        }),
-        0x6603 => Some(CryptAlg {
-            key_len: 24,
-            iv_len: 8,
-            block_len: 8,
-            is_aes256: false,
-        }),
-        _ => None,
-    }
 }
 
 /// Keyed HMAC over `msg` selecting SHA1 or SHA512 by `alg`.
@@ -138,8 +111,12 @@ pub fn decrypt_dpapi_blob(
     entropy: Option<&[u8]>,
 ) -> Result<Vec<u8>, DpapiError> {
     let alg = hash_alg(blob.alg_id_hash);
-    let cipher =
-        crypt_alg(blob.alg_id_encrypt).ok_or(DpapiError::UnsupportedAlgId(blob.alg_id_encrypt))?;
+    // Cipher key/IV sizes are knowledge (forensicnomicon); the IV is always
+    // zero-filled (impacket: `iv=b'\x00'*IVLen`). 3DES is the only non-AES-256
+    // cipher DPAPI uses, so the AES-256 algId selects the AES path.
+    let cipher = cipher_alg_info(blob.alg_id_encrypt)
+        .ok_or(DpapiError::UnsupportedAlgId(blob.alg_id_encrypt))?;
+    let is_aes256 = blob.alg_id_encrypt == CALG_AES_256;
 
     // keyHash = SHA1(master_key) — always SHA1, even for SHA512 blobs.
     let key_hash = Sha1::digest(master_key).to_vec();
@@ -157,14 +134,13 @@ pub fn decrypt_dpapi_blob(
     }
     let iv = vec![0u8; cipher.iv_len];
 
-    let cleartext = if cipher.is_aes256 {
+    let cleartext = if is_aes256 {
         decrypt_aes256_cbc(&derived[..cipher.key_len], &iv, &blob.ciphertext)?
     } else {
         decrypt_3des_cbc(&derived[..cipher.key_len], &iv, &blob.ciphertext)?
     };
 
     verify_blob_signature(&alg, &key_hash, blob, entropy)?;
-    let _ = cipher.block_len;
     Ok(cleartext)
 }
 

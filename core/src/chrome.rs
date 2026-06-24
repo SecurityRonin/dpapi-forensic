@@ -1,3 +1,5 @@
+use forensicnomicon::dpapi::{CHROME_COOKIE_V10, CHROME_COOKIE_V20};
+
 use crate::error::DpapiError;
 
 /// How a Chrome/Chromium cookie value is encoded in heap memory.
@@ -23,7 +25,7 @@ pub enum ChromeCookieEncoding {
 pub fn detect_chrome_cookie_encoding(data: &[u8]) -> ChromeCookieEncoding {
     // v10/v20 require at least 3 (prefix) + 12 (nonce) = 15 bytes
     if data.len() > 15 {
-        if data.starts_with(b"v20") {
+        if data.starts_with(CHROME_COOKIE_V20) {
             let mut nonce = [0u8; 12];
             nonce.copy_from_slice(&data[3..15]);
             return ChromeCookieEncoding::V20 {
@@ -31,7 +33,7 @@ pub fn detect_chrome_cookie_encoding(data: &[u8]) -> ChromeCookieEncoding {
                 ciphertext: data[15..].to_vec(),
             };
         }
-        if data.starts_with(b"v10") {
+        if data.starts_with(CHROME_COOKIE_V10) {
             let mut nonce = [0u8; 12];
             nonce.copy_from_slice(&data[3..15]);
             return ChromeCookieEncoding::V10 {

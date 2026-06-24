@@ -20,6 +20,9 @@ readme = "README.md"
 # lives here too, so a bump touches one line instead of every member.
 [workspace.dependencies]
 dpapi-core = { path = "core", version = "0.1.0" }
+# DPAPI format KNOWLEDGE (CALG hash/cipher algIds, provider GUID, Chrome v10/v20
+# prefixes, hash/cipher param descriptors) lives in the zero-dep knowledge crate.
+forensicnomicon = { version = "0.10", path = "../forensicnomicon" }
 thiserror = "2"
 # Crypto: audited RustCrypto crates only — DPAPI decrypt is solved; never
 # hand-roll (cf. the fleet RC4 finding). Versions tracked against memf-windows.

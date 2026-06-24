@@ -15,8 +15,10 @@ categories.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
-# DPAPI artifact knowledge (event-log channels, master-key/credential paths)
-# GUIDs / algorithm IDs are not yet modelled there, so the alg-id constants stay
+# DPAPI format KNOWLEDGE (CALG hash/cipher algIds, provider GUID, Chrome v10/v20
+# prefixes, hash/cipher param descriptors). The magic numbers live in the
+# zero-dep knowledge crate; parsing + crypto stay here.
+forensicnomicon = { workspace = true }
 # Crypto: audited RustCrypto crates only. DPAPI session-key derivation +
 # AES-256-CBC / 3DES-CBC blob decryption and AES-256-GCM cookie unwrap.
 aes = { workspace = true }
