@@ -17,7 +17,13 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use serde::Serialize;
 
-use dpapi_core::{parse_dpapi_blob, DpapiError};
+use dpapi_core::{
+    decrypt_credential, decrypt_local_state_key, decrypt_v10_cookie, decrypt_vcrd_attribute,
+    decrypt_vpol_keys, decrypt_wlan_key_material, detect_chrome_cookie_encoding,
+    extract_key_material, parse_credential_file, parse_dpapi_blob, parse_internet_explorer,
+    parse_local_state_encrypted_key, parse_vcrd_attributes, parse_vpol_file, ChromeCookieEncoding,
+    DpapiError,
+};
 
 /// CLI error: a clear, typed failure surfaced to the user (never a guessed secret).
 #[derive(Debug)]
@@ -209,49 +215,204 @@ fn guid_to_string(g: &[u8; 16]) -> String {
 
 /// Decode the browser cookie key from `Local State` JSON, optionally decrypting a
 /// `v10`/`v20` cookie blob.
+///
+/// Extracts `os_crypt.encrypted_key`, recovers the 32-byte AES cookie key via the
+/// master key, and (when `cookie_blob` is given) AES-GCM-decrypts the `v10`/`v20`
+/// value. A wrong/absent master key surfaces as a `Locked` result naming the
+/// blob's master-key GUID — never a guessed cookie.
 pub fn decode_browser(
     local_state_json: &str,
     cookie_blob: Option<&[u8]>,
     master_key: &[u8],
 ) -> Result<Vec<StoreResult>, CliError> {
-    let _ = (local_state_json, cookie_blob, master_key, guid_to_string);
-    Err(CliError::Dpapi(DpapiError::DecryptionFailed)) // RED stub
+    let value: serde_json::Value = serde_json::from_str(local_state_json)
+        .map_err(|e| CliError::Io(format!("Local State is not valid JSON: {e}")))?;
+    let encrypted_key_b64 = value
+        .get("os_crypt")
+        .and_then(|o| o.get("encrypted_key"))
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| CliError::Io("Local State has no os_crypt.encrypted_key".to_string()))?;
+
+    let key_blob = parse_local_state_encrypted_key(encrypted_key_b64.as_bytes())?;
+    let cookie_key = decrypt_local_state_key(&key_blob, master_key)
+        .map_err(|e| locked_or_err("browser", &key_blob, e))?;
+
+    let mut results = vec![StoreResult {
+        store: "browser".to_string(),
+        label: "cookie-key".to_string(),
+        secret: hex_encode(&cookie_key),
+        account: None,
+    }];
+
+    if let Some(blob) = cookie_blob {
+        let plaintext = match detect_chrome_cookie_encoding(blob) {
+            ChromeCookieEncoding::V10 { nonce, ciphertext }
+            | ChromeCookieEncoding::V20 { nonce, ciphertext } => {
+                decrypt_v10_cookie(&nonce, &ciphertext, &cookie_key)?
+            }
+            ChromeCookieEncoding::DpapiBlob(_) | ChromeCookieEncoding::Raw => {
+                return Err(CliError::Io(
+                    "cookie value is not a v10/v20 AES-GCM blob".to_string(),
+                ))
+            }
+        };
+        results.push(StoreResult {
+            store: "browser".to_string(),
+            label: "cookie".to_string(),
+            secret: String::from_utf8_lossy(&plaintext).into_owned(),
+            account: None,
+        });
+    }
+    Ok(results)
 }
 
 /// Decode a Credential Manager file's blob.
 pub fn decode_credman(file_bytes: &[u8], master_key: &[u8]) -> Result<Vec<StoreResult>, CliError> {
-    let _ = (file_bytes, master_key);
-    Err(CliError::Dpapi(DpapiError::DecryptionFailed)) // RED stub
+    let blob = parse_credential_file(file_bytes)?;
+    let cred =
+        decrypt_credential(&blob, master_key).map_err(|e| locked_or_err("credman", &blob, e))?;
+    Ok(vec![StoreResult {
+        store: "credman".to_string(),
+        label: cred.target,
+        secret: cred.secret,
+        account: Some(cred.username),
+    }])
 }
 
-/// Decode a Vault `VPOL` policy + one `VCRD` record.
+/// Decode a Vault `VPOL` policy + one `VCRD` record into its web credentials.
 pub fn decode_vault(
     vpol_bytes: &[u8],
     vcrd_bytes: &[u8],
     master_key: &[u8],
 ) -> Result<Vec<StoreResult>, CliError> {
-    let _ = (vpol_bytes, vcrd_bytes, master_key);
-    Err(CliError::Dpapi(DpapiError::DecryptionFailed)) // RED stub
+    let vpol_blob = parse_vpol_file(vpol_bytes)?;
+    let keys = decrypt_vpol_keys(&vpol_blob, master_key)
+        .map_err(|e| locked_or_err("vault", &vpol_blob, e))?;
+
+    let attrs = parse_vcrd_attributes(vcrd_bytes)?;
+    let mut results = Vec::new();
+    for attr in &attrs {
+        // Only attributes carrying an encrypted payload yield a credential.
+        let Ok(cleartext) = decrypt_vcrd_attribute(attr, &keys.key1) else {
+            continue;
+        };
+        if let Ok(cred) = parse_internet_explorer(&cleartext) {
+            results.push(StoreResult {
+                store: "vault".to_string(),
+                label: cred.resource,
+                secret: cred.password,
+                account: Some(cred.username),
+            });
+        }
+    }
+    Ok(results)
 }
 
 /// Decode a Wi-Fi profile XML's PSK.
 pub fn decode_wifi(profile_xml: &str, master_key: &[u8]) -> Result<Vec<StoreResult>, CliError> {
-    let _ = (profile_xml, master_key, locked_or_err);
-    Err(CliError::Dpapi(DpapiError::DecryptionFailed)) // RED stub
+    let key_material = extract_key_material(profile_xml)
+        .ok_or_else(|| CliError::Io("profile XML has no <keyMaterial>".to_string()))?;
+    // Resolve the blob bytes so a locked store can still name its master-key GUID.
+    let blob = hex_decode(key_material)?;
+    let psk = decrypt_wlan_key_material(key_material, master_key)
+        .map_err(|e| locked_or_err("wifi", &blob, e))?;
+    Ok(vec![StoreResult {
+        store: "wifi".to_string(),
+        label: "PSK".to_string(),
+        secret: psk,
+        account: None,
+    }])
 }
 
 impl Cli {
     /// Execute the parsed CLI, reading the artifact files and dispatching to the
     /// store decoder. Returns the recovered report or a typed [`CliError`].
     pub fn run(&self) -> Result<CliReport, CliError> {
-        Err(CliError::Io("not implemented".to_string())) // RED stub
+        let results = match &self.command {
+            Command::Browser {
+                local_state,
+                cookie,
+                key,
+            } => {
+                let mk = parse_master_key_hex(&key.master_key_hex)?;
+                let json = read_to_string(local_state)?;
+                let cookie_bytes = match cookie {
+                    Some(p) => Some(read_bytes(p)?),
+                    None => None,
+                };
+                decode_browser(&json, cookie_bytes.as_deref(), &mk)?
+            }
+            Command::Credman { file, key } => {
+                let mk = parse_master_key_hex(&key.master_key_hex)?;
+                decode_credman(&read_bytes(file)?, &mk)?
+            }
+            Command::Vault { vpol, vcrd, key } => {
+                let mk = parse_master_key_hex(&key.master_key_hex)?;
+                decode_vault(&read_bytes(vpol)?, &read_bytes(vcrd)?, &mk)?
+            }
+            Command::Wifi { profile, key } => {
+                let mk = parse_master_key_hex(&key.master_key_hex)?;
+                decode_wifi(&read_to_string(profile)?, &mk)?
+            }
+        };
+        Ok(CliReport { results })
     }
+}
+
+/// Read a file to a `String`, mapping I/O failure to a [`CliError::Io`].
+fn read_to_string(path: &std::path::Path) -> Result<String, CliError> {
+    std::fs::read_to_string(path).map_err(|e| CliError::Io(format!("{}: {e}", path.display())))
+}
+
+/// Read a file to bytes, mapping I/O failure to a [`CliError::Io`].
+fn read_bytes(path: &std::path::Path) -> Result<Vec<u8>, CliError> {
+    std::fs::read(path).map_err(|e| CliError::Io(format!("{}: {e}", path.display())))
+}
+
+/// Hex-encode bytes (lowercase) for displaying a recovered raw key.
+fn hex_encode(bytes: &[u8]) -> String {
+    use std::fmt::Write as _;
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        let _ = write!(s, "{b:02x}");
+    }
+    s
+}
+
+/// Decode an ASCII hex string into bytes, erroring loudly on bad input.
+fn hex_decode(s: &str) -> Result<Vec<u8>, CliError> {
+    let bytes = s.as_bytes();
+    if bytes.len() % 2 != 0 {
+        return Err(CliError::BadMasterKey(format!(
+            "odd-length hex ({} chars)",
+            bytes.len()
+        )));
+    }
+    let mut out = Vec::with_capacity(bytes.len() / 2);
+    let mut i = 0;
+    while i < bytes.len() {
+        out.push((nibble(bytes[i])? << 4) | nibble(bytes[i + 1])?);
+        i += 2;
+    }
+    Ok(out)
 }
 
 /// Render a [`CliReport`] as a human-readable table.
 pub fn render_text(report: &CliReport) -> String {
-    let _ = report;
-    String::new() // RED stub
+    use std::fmt::Write as _;
+    let mut out = String::new();
+    if report.results.is_empty() {
+        return "No secrets recovered.\n".to_string();
+    }
+    for r in &report.results {
+        let account = r.account.as_deref().unwrap_or("-");
+        let _ = writeln!(
+            out,
+            "[{}] {} | account={} | secret={}",
+            r.store, r.label, account, r.secret
+        );
+    }
+    out
 }
 
 #[cfg(test)]
