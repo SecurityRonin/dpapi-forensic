@@ -1,0 +1,5 @@
+# gitleaks configuration — extends the default ruleset. The crypto test vectors
+# in dpapi-core are fixed, non-secret byte patterns (e.g. 0x42-filled keys), not
+# real credentials; the default ruleset does not flag them on entropy.
+[extend]
+useDefault = true

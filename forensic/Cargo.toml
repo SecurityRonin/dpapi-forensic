@@ -1,0 +1,22 @@
+[package]
+name = "dpapi-forensic"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Forensic auditor for DPAPI-protected stores — Chrome/Edge passwords + cookie key, Credential Manager, Vault, and Wi-Fi keys as graded findings, built on dpapi-core"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/dpapi-forensic"
+readme.workspace = true
+authors.workspace = true
+keywords = ["forensics", "dpapi", "windows", "dfir", "credentials"]
+categories.workspace = true
+
+[dependencies]
+dpapi-core = { workspace = true }
+# DPAPI artifact knowledge + the shared report model (Severity/Observation).
+forensicnomicon = { workspace = true }
+
+[lints]
+workspace = true

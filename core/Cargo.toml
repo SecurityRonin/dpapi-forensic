@@ -1,0 +1,35 @@
+[package]
+name = "dpapi-core"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Pure-Rust, byte-oriented DPAPI library — parse DPAPI_BLOB, decrypt given a master key, and unwrap Chrome/Edge v10/v20 cookies, over any &[u8] source"
+repository.workspace = true
+homepage.workspace = true
+documentation = "https://docs.rs/dpapi-core"
+readme.workspace = true
+authors.workspace = true
+keywords = ["forensics", "dpapi", "windows", "dfir", "decryption"]
+categories.workspace = true
+
+[dependencies]
+thiserror = { workspace = true }
+# DPAPI artifact knowledge (event-log channels, master-key/credential paths)
+# lives in the KNOWLEDGE layer — the published forensicnomicon crate. Provider
+# GUIDs / algorithm IDs are not yet modelled there, so the alg-id constants stay
+# local to the blob parser until forensicnomicon grows them.
+forensicnomicon = { workspace = true }
+# Crypto: audited RustCrypto crates only. DPAPI session-key derivation +
+# AES-256-CBC / 3DES-CBC blob decryption and AES-256-GCM cookie unwrap.
+aes = { workspace = true }
+aes-gcm = { workspace = true }
+cbc = { workspace = true }
+cipher = { workspace = true }
+des = { workspace = true }
+hmac = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+
+[lints]
+workspace = true
