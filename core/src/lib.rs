@@ -19,7 +19,10 @@ pub mod error;
 pub mod masterkey;
 
 pub use blob::{parse_dpapi_blob, DpapiBlob};
-pub use chrome::{decrypt_v10_cookie, detect_chrome_cookie_encoding, ChromeCookieEncoding};
+pub use chrome::{
+    decrypt_local_state_key, decrypt_v10_cookie, detect_chrome_cookie_encoding,
+    parse_local_state_encrypted_key, ChromeCookieEncoding,
+};
 pub use decrypt::{decrypt_aes256_cbc, decrypt_dpapi_blob, verify_hmac_sha1};
 pub use error::DpapiError;
 pub use masterkey::{

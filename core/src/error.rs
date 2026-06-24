@@ -21,4 +21,10 @@ pub enum DpapiError {
     Utf16Error,
     #[error("domain RSA backup-key path is not implemented")]
     DomainBackupUnsupported,
+    #[error("base64 decode error in Local State encrypted_key")]
+    Base64Error,
+    #[error("Local State encrypted_key missing the 5-byte 'DPAPI' prefix (first bytes: {0})")]
+    MissingDpapiPrefix(String),
+    #[error("recovered cookie key has unexpected length: expected {expected} bytes, got {got}")]
+    UnexpectedKeyLength { expected: usize, got: usize },
 }

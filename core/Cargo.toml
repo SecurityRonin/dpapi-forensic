@@ -15,6 +15,8 @@ categories.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
+# Chrome/Edge `Local State` `os_crypt.encrypted_key` is base64-encoded.
+base64 = { workspace = true }
 # DPAPI format KNOWLEDGE (CALG hash/cipher algIds, provider GUID, Chrome v10/v20
 # prefixes, hash/cipher param descriptors). The magic numbers live in the
 # zero-dep knowledge crate; parsing + crypto stay here.

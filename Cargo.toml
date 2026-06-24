@@ -24,6 +24,8 @@ dpapi-core = { path = "core", version = "0.1.0" }
 # prefixes, hash/cipher param descriptors) lives in the zero-dep knowledge crate.
 forensicnomicon = "0.10"
 thiserror = "2"
+# Chrome/Edge `Local State` stores the DPAPI-wrapped cookie key as standard base64.
+base64 = "0.22"
 # Crypto: audited RustCrypto crates only — DPAPI decrypt is solved; never
 # hand-roll (cf. the fleet RC4 finding). Versions tracked against memf-windows.
 aes = "0.8"
