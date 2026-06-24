@@ -37,10 +37,19 @@ pub struct Credential {
 /// bytes of `Data`. A truncated file (Size larger than the remaining bytes) is
 /// rejected with [`DpapiError::TooShort`] rather than over-reading.
 pub fn parse_credential_file(data: &[u8]) -> Result<Vec<u8>, DpapiError> {
-    // RED stub: not implemented. Returns an empty blob so the downstream decode
-    // fails a value/parse check rather than fabricating output.
-    let _ = data;
-    Ok(Vec::new())
+    // Version(4) + Size(4) + Unknown(4) = 12-byte header, then Size bytes of Data.
+    // Size is at offset 4 (impacket CredentialFile: Version, Size, Unknown, Data).
+    const HEADER_LEN: usize = 12;
+    let size = read_u32(data, 4) as usize;
+    let end = HEADER_LEN.checked_add(size).ok_or(DpapiError::TooShort {
+        needed: usize::MAX,
+        got: data.len(),
+    })?;
+    let blob = data.get(HEADER_LEN..end).ok_or(DpapiError::TooShort {
+        needed: end,
+        got: data.len(),
+    })?;
+    Ok(blob.to_vec())
 }
 
 /// Decrypt + decode a Credential Manager entry from its DPAPI blob bytes.
@@ -53,15 +62,77 @@ pub fn parse_credential_file(data: &[u8]) -> Result<Vec<u8>, DpapiError> {
 /// A wrong/absent master key fails the blob's Sign-HMAC and returns a
 /// [`DpapiError`] — it never returns a fabricated/empty credential.
 pub fn decrypt_credential(blob_bytes: &[u8], master_key: &[u8]) -> Result<Credential, DpapiError> {
-    // RED stub: not implemented. Returns an empty credential (deliberately wrong)
-    // so the oracle value-match test FAILS; it does NOT fabricate plausible fields.
-    let _ = (blob_bytes, master_key, decode_utf16le(&[]));
+    let blob = crate::blob::parse_dpapi_blob(blob_bytes)?;
+    let cleartext = crate::decrypt::decrypt_dpapi_blob(&blob, master_key, None)?;
+    parse_credential_blob(&cleartext)
+}
+
+/// Parse a decrypted `CREDENTIAL_BLOB` (impacket layout) into a [`Credential`].
+///
+/// The fixed header is `Flags(4) Size(4) Unknown0(4) Type(4) Flags2(4)
+/// LastWritten(8) Unknown2(4) Persist(4) AttrCount(4) Unknown3(8)` (48 bytes),
+/// followed by length-prefixed (`<u32` length + bytes) UTF-16LE fields in order:
+/// `Target`, `TargetAlias`, `Description`, `Unknown` (the secret), `Username`.
+/// Out-of-range length fields are rejected with [`DpapiError::TooShort`].
+fn parse_credential_blob(data: &[u8]) -> Result<Credential, DpapiError> {
+    const HEADER_LEN: usize = 48;
+    if data.len() < HEADER_LEN {
+        return Err(DpapiError::TooShort {
+            needed: HEADER_LEN,
+            got: data.len(),
+        });
+    }
+    // LastWritten is a FILETIME at offset 20 (after Flags+Size+Unknown0+Type+Flags2).
+    let last_written = read_u64(data, 20);
+
+    let mut pos = HEADER_LEN;
+    let target = read_len_prefixed_utf16(data, &mut pos)?;
+    let _target_alias = read_len_prefixed_utf16(data, &mut pos)?;
+    let _description = read_len_prefixed_utf16(data, &mut pos)?;
+    let secret = read_len_prefixed_utf16(data, &mut pos)?;
+    let username = read_len_prefixed_utf16(data, &mut pos)?;
+
     Ok(Credential {
-        target: String::new(),
-        username: String::new(),
-        secret: String::new(),
-        last_written: 0,
+        target,
+        username,
+        secret,
+        last_written,
     })
+}
+
+/// Read a `<u32`-length-prefixed field at `*pos` and UTF-16LE-decode it.
+fn read_len_prefixed_utf16(data: &[u8], pos: &mut usize) -> Result<String, DpapiError> {
+    let len = read_u32(data, *pos) as usize;
+    let start = pos.checked_add(4).ok_or(DpapiError::TooShort {
+        needed: usize::MAX,
+        got: data.len(),
+    })?;
+    let end = start.checked_add(len).ok_or(DpapiError::TooShort {
+        needed: usize::MAX,
+        got: data.len(),
+    })?;
+    let slice = data.get(start..end).ok_or(DpapiError::TooShort {
+        needed: end,
+        got: data.len(),
+    })?;
+    *pos = end;
+    Ok(decode_utf16le(slice))
+}
+
+/// Read a little-endian u32 at `off`; out-of-range yields 0 (never panics).
+#[inline]
+fn read_u32(data: &[u8], off: usize) -> u32 {
+    data.get(off..off + 4)
+        .and_then(|s| s.try_into().ok())
+        .map_or(0, u32::from_le_bytes)
+}
+
+/// Read a little-endian u64 at `off`; out-of-range yields 0 (never panics).
+#[inline]
+fn read_u64(data: &[u8], off: usize) -> u64 {
+    data.get(off..off + 8)
+        .and_then(|s| s.try_into().ok())
+        .map_or(0, u64::from_le_bytes)
 }
 
 #[cfg(test)]
