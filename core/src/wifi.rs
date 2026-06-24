@@ -21,9 +21,12 @@ use crate::error::DpapiError;
 /// (the profile schema has exactly one). Returns `None` when the tag is absent
 /// (e.g. an open network with no key). Whitespace around the value is trimmed.
 pub fn extract_key_material(profile_xml: &str) -> Option<&str> {
-    // RED stub: not implemented.
-    let _ = profile_xml;
-    None
+    const OPEN: &str = "<keyMaterial>";
+    const CLOSE: &str = "</keyMaterial>";
+    let start = profile_xml.find(OPEN)? + OPEN.len();
+    let rest = profile_xml.get(start..)?;
+    let end = rest.find(CLOSE)?;
+    Some(rest.get(..end)?.trim())
 }
 
 /// Decrypt a WLAN `<keyMaterial>` hex string into the plaintext PSK.
@@ -39,10 +42,46 @@ pub fn decrypt_wlan_key_material(
     key_material_hex: &str,
     master_key: &[u8],
 ) -> Result<String, DpapiError> {
-    // RED stub: not implemented. Returns an empty PSK (deliberately wrong) so the
-    // oracle value-match test FAILS; it does NOT fabricate a plausible PSK.
-    let _ = (key_material_hex, master_key);
-    Ok(String::new())
+    let blob_bytes = hex_decode(key_material_hex)?;
+    let blob = crate::blob::parse_dpapi_blob(&blob_bytes)?;
+    let cleartext = crate::decrypt::decrypt_dpapi_blob(&blob, master_key, None)?;
+    // Windows stores the PSK as UTF-8 with a trailing NUL.
+    let trimmed = cleartext
+        .iter()
+        .position(|&b| b == 0)
+        .map_or(cleartext.as_slice(), |nul| &cleartext[..nul]);
+    String::from_utf8(trimmed.to_vec()).map_err(|_| DpapiError::Utf16Error)
+}
+
+/// Decode an ASCII hex string into bytes. Rejects odd length or non-hex digits
+/// loudly (with the offending value range) rather than guessing.
+fn hex_decode(s: &str) -> Result<Vec<u8>, DpapiError> {
+    let bytes = s.as_bytes();
+    if bytes.len() % 2 != 0 {
+        return Err(DpapiError::InvalidHex(format!(
+            "odd length ({} chars)",
+            bytes.len()
+        )));
+    }
+    let mut out = Vec::with_capacity(bytes.len() / 2);
+    let mut i = 0;
+    while i < bytes.len() {
+        let hi = hex_nibble(bytes[i])?;
+        let lo = hex_nibble(bytes[i + 1])?;
+        out.push((hi << 4) | lo);
+        i += 2;
+    }
+    Ok(out)
+}
+
+/// Convert one ASCII hex digit to its nibble; non-hex bytes error with the value.
+fn hex_nibble(b: u8) -> Result<u8, DpapiError> {
+    match b {
+        b'0'..=b'9' => Ok(b - b'0'),
+        b'a'..=b'f' => Ok(b - b'a' + 10),
+        b'A'..=b'F' => Ok(b - b'A' + 10),
+        other => Err(DpapiError::InvalidHex(format!("non-hex byte {other:#04x}"))),
+    }
 }
 
 #[cfg(test)]

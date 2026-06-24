@@ -27,4 +27,6 @@ pub enum DpapiError {
     MissingDpapiPrefix(String),
     #[error("recovered cookie key has unexpected length: expected {expected} bytes, got {got}")]
     UnexpectedKeyLength { expected: usize, got: usize },
+    #[error("invalid hex in WLAN keyMaterial: {0}")]
+    InvalidHex(String),
 }
