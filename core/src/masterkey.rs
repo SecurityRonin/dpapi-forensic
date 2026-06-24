@@ -13,7 +13,7 @@
 //!   fields: `MasterKeyLen`, `BackupKeyLen`, `CredHistLen`, `DomainKeyLen`;
 //! * followed by the four sub-blobs in that order, each exactly its length.
 //!
-//! The **MasterKey** sub-blob is itself `Version(4)`, `Salt(16)`,
+//! The **`MasterKey`** sub-blob is itself `Version(4)`, `Salt(16)`,
 //! `IterationCount(4)`, `HashAlgo(4)`, `CryptAlgo(4)`, then the encrypted `data`.
 //!
 //! Derivation (`MasterKey.decrypt`): `deriveKey(preKey, salt, keyLen+ivLen,
@@ -76,22 +76,28 @@ pub struct MasterKey {
 
 /// Read a little-endian `u32` at `*pos`, advancing by 4. Out-of-range → error.
 fn read_u32(data: &[u8], pos: &mut usize) -> Result<u32, DpapiError> {
-    let slice = data.get(*pos..*pos + 4).ok_or(DpapiError::TooShort {
-        needed: *pos + 4,
-        got: data.len(),
-    })?;
+    let slice: [u8; 4] = data
+        .get(*pos..*pos + 4)
+        .and_then(|s| s.try_into().ok())
+        .ok_or(DpapiError::TooShort {
+            needed: *pos + 4,
+            got: data.len(),
+        })?;
     *pos += 4;
-    Ok(u32::from_le_bytes(slice.try_into().expect("4-byte slice")))
+    Ok(u32::from_le_bytes(slice))
 }
 
 /// Read a little-endian `u64` at `*pos`, advancing by 8. Out-of-range → error.
 fn read_u64(data: &[u8], pos: &mut usize) -> Result<u64, DpapiError> {
-    let slice = data.get(*pos..*pos + 8).ok_or(DpapiError::TooShort {
-        needed: *pos + 8,
-        got: data.len(),
-    })?;
+    let slice: [u8; 8] = data
+        .get(*pos..*pos + 8)
+        .and_then(|s| s.try_into().ok())
+        .ok_or(DpapiError::TooShort {
+            needed: *pos + 8,
+            got: data.len(),
+        })?;
     *pos += 8;
-    Ok(u64::from_le_bytes(slice.try_into().expect("8-byte slice")))
+    Ok(u64::from_le_bytes(slice))
 }
 
 /// Decode a UTF-16LE byte string, trimming trailing NULs.
@@ -201,16 +207,20 @@ fn uses_sha512(alg_id_hash: u32) -> Result<bool, DpapiError> {
         .ok_or(DpapiError::UnsupportedAlgId(alg_id_hash))
 }
 
-/// PRF = HMAC over the chosen hash module.
-fn prf(is_sha512: bool, key: &[u8], msg: &[u8]) -> Vec<u8> {
+/// PRF = HMAC over the chosen hash module. HMAC accepts any key length, so the
+/// only error path is a degenerate construction failure, surfaced (not
+/// swallowed) as [`DpapiError::InvalidKeyLength`].
+fn prf(is_sha512: bool, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, DpapiError> {
     if is_sha512 {
-        let mut mac = Hmac::<Sha512>::new_from_slice(key).expect("HMAC takes any key length");
+        let mut mac =
+            Hmac::<Sha512>::new_from_slice(key).map_err(|_| DpapiError::InvalidKeyLength)?;
         mac.update(msg);
-        mac.finalize().into_bytes().to_vec()
+        Ok(mac.finalize().into_bytes().to_vec())
     } else {
-        let mut mac = Hmac::<Sha1>::new_from_slice(key).expect("HMAC takes any key length");
+        let mut mac =
+            Hmac::<Sha1>::new_from_slice(key).map_err(|_| DpapiError::InvalidKeyLength)?;
         mac.update(msg);
-        mac.finalize().into_bytes().to_vec()
+        Ok(mac.finalize().into_bytes().to_vec())
     }
 }
 
@@ -227,16 +237,16 @@ fn derive_key(
     salt: &[u8],
     keylen: usize,
     count: u32,
-) -> Vec<u8> {
+) -> Result<Vec<u8>, DpapiError> {
     let mut key_material: Vec<u8> = Vec::with_capacity(keylen + 64);
     let mut i: u32 = 1;
     while key_material.len() < keylen {
         let mut u = salt.to_vec();
         u.extend_from_slice(&i.to_be_bytes());
         i += 1;
-        let mut derived = prf(is_sha512, passphrase, &u);
+        let mut derived = prf(is_sha512, passphrase, &u)?;
         for _ in 0..count.saturating_sub(1) {
-            let actual = prf(is_sha512, passphrase, &derived);
+            let actual = prf(is_sha512, passphrase, &derived)?;
             for (d, a) in derived.iter_mut().zip(actual.iter()) {
                 *d ^= a;
             }
@@ -244,7 +254,7 @@ fn derive_key(
         key_material.extend_from_slice(&derived);
     }
     key_material.truncate(keylen);
-    key_material
+    Ok(key_material)
 }
 
 /// Derive the 64-byte master key from a master-key sub-blob and a **pre-key**.
@@ -259,10 +269,46 @@ pub fn derive_master_key_from_prekey(
     mk: &MasterKey,
     pre_key: &[u8],
 ) -> Result<[u8; MASTER_KEY_LEN], DpapiError> {
-    // RED stub: derivation not yet implemented — the impacket-anchored test
-    // fails until the real crypto lands in GREEN.
-    let _ = (mk, pre_key);
-    Err(DpapiError::DecryptionFailed)
+    let is_sha512 = uses_sha512(mk.alg_id_hash)?;
+    let cipher = cipher_alg_info(mk.alg_id_encrypt)
+        .ok_or(DpapiError::UnsupportedAlgId(mk.alg_id_encrypt))?;
+    let digest_len = hash_alg_info(mk.alg_id_hash)
+        .ok_or(DpapiError::UnsupportedAlgId(mk.alg_id_hash))?
+        .digest_len;
+
+    let derived = derive_key(
+        is_sha512,
+        pre_key,
+        &mk.salt,
+        cipher.key_len + cipher.iv_len,
+        mk.rounds,
+    )?;
+    let crypt_key = &derived[..cipher.key_len];
+    let iv = &derived[cipher.key_len..cipher.key_len + cipher.iv_len];
+
+    let cleartext = if mk.alg_id_encrypt == CALG_AES_256 {
+        cbc_decrypt_no_pad::<Aes256>(crypt_key, iv, &mk.data)?
+    } else {
+        cbc_decrypt_no_pad::<TdesEde3>(crypt_key, iv, &mk.data)?
+    };
+
+    if cleartext.len() < MASTER_KEY_LEN || cleartext.len() < 16 + digest_len {
+        return Err(DpapiError::DecryptionFailed);
+    }
+    let master_key_bytes = &cleartext[cleartext.len() - MASTER_KEY_LEN..];
+    let hmac_salt = &cleartext[..16];
+    let stored_hmac = &cleartext[16..16 + digest_len];
+
+    // hmacKey = HMAC_H(preKey, hmacSalt); calc = HMAC_H(hmacKey, masterKey)
+    let hmac_key = prf(is_sha512, pre_key, hmac_salt)?;
+    let calc = prf(is_sha512, &hmac_key, master_key_bytes)?;
+    if calc.get(..digest_len) != Some(stored_hmac) {
+        return Err(DpapiError::HmacMismatch);
+    }
+
+    let mut out = [0u8; MASTER_KEY_LEN];
+    out.copy_from_slice(master_key_bytes);
+    Ok(out)
 }
 
 /// CBC-decrypt without unpadding (the DPAPI master-key payload is block-aligned
@@ -285,19 +331,25 @@ where
 /// `HMAC-SHA1(pwd_sha1, UTF16LE(sid + "\0"))` — impacket `deriveKeysFromUser`
 /// key1 (the SHA-1 variant). This is the value to pass to
 /// [`derive_master_key_from_prekey`] for a modern (Vista+) profile.
-pub fn prekey_from_sha1(sid: &str, pwd_sha1: &[u8; 20]) -> [u8; 20] {
-    // RED stub: real HMAC-SHA1 derivation lands in GREEN.
-    let _ = (sid, pwd_sha1);
-    [0u8; 20]
+pub fn prekey_from_sha1(sid: &str, pwd_sha1: &[u8; 20]) -> Result<[u8; 20], DpapiError> {
+    let sid_utf16 = utf16le_with_nul(sid);
+    let mut mac =
+        Hmac::<Sha1>::new_from_slice(pwd_sha1).map_err(|_| DpapiError::InvalidKeyLength)?;
+    mac.update(&sid_utf16);
+    let out = mac.finalize().into_bytes();
+    let mut k = [0u8; 20];
+    k.copy_from_slice(&out);
+    Ok(k)
 }
 
 /// Derive the pre-key directly from a plaintext password and SID.
 ///
 /// `pwd_sha1 = SHA1(UTF16LE(password))`, then [`prekey_from_sha1`].
-pub fn prekey_from_password(sid: &str, password: &str) -> [u8; 20] {
-    // RED stub: real SHA1(UTF16LE(pw)) + HMAC derivation lands in GREEN.
-    let _ = (sid, password);
-    [0u8; 20]
+pub fn prekey_from_password(sid: &str, password: &str) -> Result<[u8; 20], DpapiError> {
+    let mut h = Sha1::new();
+    h.update(utf16le(password));
+    let digest: [u8; 20] = h.finalize().into();
+    prekey_from_sha1(sid, &digest)
 }
 
 /// Full user-password path: parse the file, derive the pre-key, decrypt the key.
@@ -310,11 +362,11 @@ pub fn derive_master_key_from_password(
     password: &str,
 ) -> Result<[u8; MASTER_KEY_LEN], DpapiError> {
     let mk = parse_master_key(&file.master_key)?;
-    let pre_key = prekey_from_password(sid, password);
+    let pre_key = prekey_from_password(sid, password)?;
     derive_master_key_from_prekey(&mk, &pre_key)
 }
 
-/// Decrypt the master key via the **domain RSA backup key** (DomainKey sub-blob).
+/// Decrypt the master key via the **domain RSA backup key** (`DomainKey` sub-blob).
 ///
 /// Next sub-step, not implemented this pass: the `DomainKey` sub-blob holds the
 /// master key wrapped with the domain controller's RSA *backup* key (the
@@ -421,7 +473,7 @@ mod tests {
 
     #[test]
     fn prekey_from_password_matches_impacket() {
-        let k = prekey_from_password(DERIVE_SID, DERIVE_PWD);
+        let k = prekey_from_password(DERIVE_SID, DERIVE_PWD).expect("derive prekey");
         assert_eq!(k.to_vec(), hex(DERIVE_PREKEY));
     }
 
@@ -429,7 +481,7 @@ mod tests {
     fn prekey_from_sha1_matches_impacket() {
         let mut sha1 = [0u8; 20];
         sha1.copy_from_slice(&hex(DERIVE_PWD_SHA1));
-        let k = prekey_from_sha1(DERIVE_SID, &sha1);
+        let k = prekey_from_sha1(DERIVE_SID, &sha1).expect("derive prekey");
         assert_eq!(k.to_vec(), hex(DERIVE_PREKEY));
     }
 
