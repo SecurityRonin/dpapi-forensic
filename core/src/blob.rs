@@ -216,6 +216,28 @@ mod tests {
     }
 
     #[test]
+    fn parse_rejects_non_dpapi_provider_guid() {
+        // Structurally valid but the provider GUID is not the DPAPI provider:
+        // it must be rejected loudly (with the offending bytes), not mis-parsed.
+        let mut blob = make_blob(
+            0x6610,
+            0x8004,
+            &[0xEEu8; 16],
+            &[],
+            &[0xCCu8; 20],
+            &[0xDDu8; 16],
+            &[0xCCu8; 20],
+        );
+        blob[4..20].copy_from_slice(&[0x11u8; 16]); // clobber provider GUID
+        match parse_dpapi_blob(&blob) {
+            Err(DpapiError::NotDpapiProvider(guid)) => {
+                assert!(guid.contains("11"), "error must surface the bytes: {guid}");
+            }
+            other => panic!("expected NotDpapiProvider, got {other:?}"),
+        }
+    }
+
+    #[test]
     fn parse_extracts_master_key_guid() {
         let blob = make_blob(
             0x6610,

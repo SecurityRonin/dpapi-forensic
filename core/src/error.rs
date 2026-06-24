@@ -7,6 +7,8 @@ pub enum DpapiError {
     TooShort { needed: usize, got: usize },
     #[error("unsupported version: {0}")]
     UnsupportedVersion(u32),
+    #[error("not a DPAPI blob: provider GUID {0} != the DPAPI provider")]
+    NotDpapiProvider(String),
     #[error("unsupported algorithm ID: {0:#010x}")]
     UnsupportedAlgId(u32),
     #[error("invalid key or IV length")]
