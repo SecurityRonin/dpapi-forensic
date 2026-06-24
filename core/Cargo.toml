@@ -16,10 +16,7 @@ categories.workspace = true
 [dependencies]
 thiserror = { workspace = true }
 # DPAPI artifact knowledge (event-log channels, master-key/credential paths)
-# lives in the KNOWLEDGE layer — the published forensicnomicon crate. Provider
 # GUIDs / algorithm IDs are not yet modelled there, so the alg-id constants stay
-# local to the blob parser until forensicnomicon grows them.
-forensicnomicon = { workspace = true }
 # Crypto: audited RustCrypto crates only. DPAPI session-key derivation +
 # AES-256-CBC / 3DES-CBC blob decryption and AES-256-GCM cookie unwrap.
 aes = { workspace = true }

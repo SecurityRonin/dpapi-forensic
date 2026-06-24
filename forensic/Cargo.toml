@@ -15,8 +15,6 @@ categories.workspace = true
 
 [dependencies]
 dpapi-core = { workspace = true }
-# DPAPI artifact knowledge + the shared report model (Severity/Observation).
-forensicnomicon = { workspace = true }
 
 [lints]
 workspace = true
