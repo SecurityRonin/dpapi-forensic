@@ -14,6 +14,7 @@
 
 pub mod blob;
 pub mod chrome;
+pub mod credential;
 pub mod decrypt;
 pub mod error;
 pub mod masterkey;
@@ -23,6 +24,7 @@ pub use chrome::{
     decrypt_local_state_key, decrypt_v10_cookie, detect_chrome_cookie_encoding,
     parse_local_state_encrypted_key, ChromeCookieEncoding,
 };
+pub use credential::{decrypt_credential, parse_credential_file, Credential};
 pub use decrypt::{decrypt_aes256_cbc, decrypt_dpapi_blob, verify_hmac_sha1};
 pub use error::DpapiError;
 pub use masterkey::{

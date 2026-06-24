@@ -33,6 +33,33 @@ the generator below reproduces them.
     same 32-byte key via Python `cryptography` AESGCM (bit-for-bit compatible with
     RustCrypto `aes-gcm`). Expected plaintext: `forensic-session-token-42`.
 
+## Credential Manager path (step-2, deliverable 2)
+
+The Credential Manager RED/GREEN test (`core/src/credential.rs`) pins decoded fields
+against a vector minted **through impacket 0.13.1** (`impacket.dpapi.CredentialFile`,
+`DPAPI_BLOB`, `CREDENTIAL_BLOB`). Classification: `SYNTHETIC` (minted), ground truth
+established by an **independent oracle** (impacket parses + decrypts back to the same
+fields) — tier-2. Inline hex constants in the test are the committed copy.
+
+#### build_credential_vector.py
+
+- **Generator** (verbatim, committed): `tests/data/build_credential_vector.py`
+- **Run**: `python3 tests/data/build_credential_vector.py` (needs `impacket==0.13.1`
+  and `pycryptodome`; validated with anaconda Python 3.12 + impacket 0.13.1).
+- **MD5**: `b4822d8516a52df9ef090174dd060bd8`
+- **What it produces / pins**:
+  - **Master key** — the same tier-1 impacket-validated key (`9828d987...81b0ce3`).
+  - **On-disk `CredentialFile`** (`CRED_FILE_HEX`) — impacket `CredentialFile`
+    wrapper (`Version(4)`, `Size(4)`, `Unknown(4)`) around the inner DPAPI blob
+    (`CRED_BLOB_HEX`, CALG_SHA_512 / AES-256-CBC, no entropy). The inner blob is
+    minted by reproducing the inverse of `DPAPI_BLOB.decrypt`.
+  - **Confirmed by impacket**: `DPAPI_BLOB(CredentialFile(file)['Data']).decrypt(mk)`
+    yields the cleartext, and `CREDENTIAL_BLOB(cleartext)` decodes to
+    `Target="Domain:target=TERMSRV/fileserver01"`, `Username="CORP\\jdoe"`,
+    secret (`Unknown` field) `"S3cr3t-P@ssw0rd!"`. The script asserts these
+    round-trips, so the expected strings are genuinely impacket output, not
+    self-authored.
+
 ## DPAPI blob decrypt vectors (step-1)
 
 The `core/src/decrypt.rs` tier-1 vectors (`MASTER_KEY_HEX`, `VECTOR1_BLOB_HEX`,
