@@ -13,8 +13,15 @@ authors.workspace = true
 keywords = ["forensics", "dpapi", "windows", "dfir", "credentials"]
 categories.workspace = true
 
+[[bin]]
+name = "dpapi4n6"
+path = "src/main.rs"
+
 [dependencies]
 dpapi-core = { workspace = true }
+clap = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 
 [lints]
 workspace = true

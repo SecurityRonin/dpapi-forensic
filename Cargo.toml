@@ -26,6 +26,10 @@ forensicnomicon = "0.10"
 thiserror = "2"
 # Chrome/Edge `Local State` stores the DPAPI-wrapped cookie key as standard base64.
 base64 = "0.22"
+# CLI (dpapi4n6) front-end deps — live in the forensic crate only.
+clap = { version = "4", features = ["derive"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 # Crypto: audited RustCrypto crates only — DPAPI decrypt is solved; never
 # hand-roll (cf. the fleet RC4 finding). Versions tracked against memf-windows.
 aes = "0.8"
