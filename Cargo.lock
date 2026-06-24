@@ -155,6 +155,8 @@ dependencies = [
 [[package]]
 name = "forensicnomicon"
 version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae9cb9b577048bab0730b10332dc745d78f417d10101b0e4c44fd5c7b2a49363"
 
 [[package]]
 name = "generic-array"

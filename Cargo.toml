@@ -22,7 +22,7 @@ readme = "README.md"
 dpapi-core = { path = "core", version = "0.1.0" }
 # DPAPI format KNOWLEDGE (CALG hash/cipher algIds, provider GUID, Chrome v10/v20
 # prefixes, hash/cipher param descriptors) lives in the zero-dep knowledge crate.
-forensicnomicon = { version = "0.10", path = "../forensicnomicon" }
+forensicnomicon = "0.10"
 thiserror = "2"
 # Crypto: audited RustCrypto crates only — DPAPI decrypt is solved; never
 # hand-roll (cf. the fleet RC4 finding). Versions tracked against memf-windows.
