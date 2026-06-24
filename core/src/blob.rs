@@ -150,7 +150,7 @@ pub fn parse_dpapi_blob(data: &[u8]) -> Result<DpapiBlob, DpapiError> {
 }
 
 /// Decode a UTF-16LE byte string, trimming trailing NULs.
-fn decode_utf16le(bytes: &[u8]) -> String {
+pub(crate) fn decode_utf16le(bytes: &[u8]) -> String {
     if bytes.len() < 2 {
         return String::new();
     }

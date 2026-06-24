@@ -34,10 +34,13 @@ use cipher::{block_padding::NoPadding, BlockDecryptMut, KeyIvInit};
 use des::TdesEde3;
 use hmac::{Hmac, Mac};
 use sha1::{Digest, Sha1};
-use sha2::Sha512;
 
-use forensicnomicon::dpapi::{cipher_alg_info, hash_alg_info, CALG_AES_256, CALG_HMAC};
+use forensicnomicon::dpapi::{
+    cipher_alg_info, hash_alg_info, CALG_AES_256, CALG_HMAC, CALG_SHA1, CALG_SHA_512,
+};
 
+use crate::blob::{decode_utf16le, hash_alg};
+use crate::decrypt::hmac_hash;
 use crate::error::DpapiError;
 
 /// Fixed master-key file header size (impacket `len(MasterKeyFile)`).
@@ -98,17 +101,6 @@ fn read_u64(data: &[u8], pos: &mut usize) -> Result<u64, DpapiError> {
         })?;
     *pos += 8;
     Ok(u64::from_le_bytes(slice))
-}
-
-/// Decode a UTF-16LE byte string, trimming trailing NULs.
-fn decode_utf16le(bytes: &[u8]) -> String {
-    let words: Vec<u16> = bytes
-        .chunks_exact(2)
-        .map(|c| u16::from_le_bytes([c[0], c[1]]))
-        .collect();
-    String::from_utf16_lossy(&words)
-        .trim_end_matches('\0')
-        .to_string()
 }
 
 /// Parse a DPAPI master-key file (impacket `MasterKeyFile` layout).
@@ -207,21 +199,15 @@ fn uses_sha512(alg_id_hash: u32) -> Result<bool, DpapiError> {
         .ok_or(DpapiError::UnsupportedAlgId(alg_id_hash))
 }
 
-/// PRF = HMAC over the chosen hash module. HMAC accepts any key length, so the
-/// only error path is a degenerate construction failure, surfaced (not
-/// swallowed) as [`DpapiError::InvalidKeyLength`].
+/// PRF = HMAC over the chosen hash module (SHA-512 vs SHA-1).
+///
+/// Delegates the RustCrypto HMAC wiring to [`crate::decrypt::hmac_hash`] — the
+/// same construction the blob decryptor uses — selecting the module via the
+/// canonical `algId` for the chosen width so a single keyed-HMAC implementation
+/// serves both the on-disk (master-key file) and in-memory (blob) paths.
 fn prf(is_sha512: bool, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, DpapiError> {
-    if is_sha512 {
-        let mut mac =
-            Hmac::<Sha512>::new_from_slice(key).map_err(|_| DpapiError::InvalidKeyLength)?;
-        mac.update(msg);
-        Ok(mac.finalize().into_bytes().to_vec())
-    } else {
-        let mut mac =
-            Hmac::<Sha1>::new_from_slice(key).map_err(|_| DpapiError::InvalidKeyLength)?;
-        mac.update(msg);
-        Ok(mac.finalize().into_bytes().to_vec())
-    }
+    let alg = hash_alg(if is_sha512 { CALG_SHA_512 } else { CALG_SHA1 });
+    hmac_hash(alg, key, msg)
 }
 
 /// impacket `MasterKey.deriveKey`: iterated key material of length `keylen`.

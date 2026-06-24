@@ -30,7 +30,7 @@ pub fn verify_hmac_sha1(key: &[u8], data: &[u8], expected: &[u8]) -> Result<(), 
 }
 
 /// Keyed HMAC over `msg` selecting SHA1 or SHA512 by `alg`.
-fn hmac_hash(alg: HashAlg, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, DpapiError> {
+pub(crate) fn hmac_hash(alg: HashAlg, key: &[u8], msg: &[u8]) -> Result<Vec<u8>, DpapiError> {
     if alg.is_sha512 {
         let mut mac =
             Hmac::<Sha512>::new_from_slice(key).map_err(|_| DpapiError::InvalidKeyLength)?;
