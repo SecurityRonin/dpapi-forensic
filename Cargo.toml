@@ -19,10 +19,10 @@ readme = "README.md"
 # members write `dep.workspace = true`. The inter-crate `dpapi-core` version
 # lives here too, so a bump touches one line instead of every member.
 [workspace.dependencies]
-dpapi-core = { path = "core", version = "0.1.0" }
+dpapi-core = { path = "core", version = "0.2.0" }
 # DPAPI format KNOWLEDGE (CALG hash/cipher algIds, provider GUID, Chrome v10/v20
 # prefixes, hash/cipher param descriptors) lives in the zero-dep knowledge crate.
-forensicnomicon = "0.10"
+forensicnomicon = "1"
 thiserror = "2"
 # Chrome/Edge `Local State` stores the DPAPI-wrapped cookie key as standard base64.
 base64 = "0.22"
