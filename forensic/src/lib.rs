@@ -194,21 +194,12 @@ fn locked_or_err(store: &str, blob_bytes: &[u8], e: DpapiError) -> CliError {
 }
 
 /// Format a 16-byte GUID as the canonical mixed-endian string.
+///
+/// `uuid::from_bytes_le` renders exactly this form (first three fields
+/// little-endian, trailing 8 bytes as-is); reuse the vetted crate instead of
+/// hand-rolling the format string. Pinned by `guid_to_string_renders_mixed_endian`.
 fn guid_to_string(g: &[u8; 16]) -> String {
-    format!(
-        "{:08x}-{:04x}-{:04x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
-        u32::from_le_bytes([g[0], g[1], g[2], g[3]]),
-        u16::from_le_bytes([g[4], g[5]]),
-        u16::from_le_bytes([g[6], g[7]]),
-        g[8],
-        g[9],
-        g[10],
-        g[11],
-        g[12],
-        g[13],
-        g[14],
-        g[15]
-    )
+    uuid::Uuid::from_bytes_le(*g).to_string()
 }
 
 // --- Decode helpers (no I/O; the testable core of each subcommand) ---

@@ -26,6 +26,9 @@ forensicnomicon = "1"
 thiserror = "2"
 # Chrome/Edge `Local State` stores the DPAPI-wrapped cookie key as standard base64.
 base64 = "0.22"
+# Canonical mixed-endian GUID rendering — reuse the vetted crate rather than
+# hand-roll the `{:08x}-{:04x}-…` formatter (`from_bytes_le` is the exact form).
+uuid = "1"
 # CLI (dpapi4n6) front-end deps — live in the forensic crate only.
 clap = { version = "4", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
