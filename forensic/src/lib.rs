@@ -524,6 +524,18 @@ mod tests {
     }
 
     #[test]
+    fn guid_to_string_renders_mixed_endian() {
+        // First three fields little-endian, trailing 8 bytes as-is — the
+        // canonical Windows/DPAPI form (identical to uuid::from_bytes_le). This
+        // pins the rendering so the reuse of the vetted crate stays byte-exact.
+        let g = [
+            0x44, 0x33, 0x22, 0x11, 0x66, 0x55, 0x88, 0x77, 0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE,
+            0xFF, 0x00,
+        ];
+        assert_eq!(guid_to_string(&g), "11223344-5566-7788-99aa-bbccddeeff00");
+    }
+
+    #[test]
     fn json_report_serializes() {
         let report = CliReport {
             results: vec![StoreResult {
