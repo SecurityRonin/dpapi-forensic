@@ -49,6 +49,8 @@ plugins:
 
 # Planning docs are kept in the repo for history but excluded from the site.
 exclude_docs: |
+  PRD.md
+  decisions/
   plans/
 
 # Directory URLs (/privacy/, /terms/) — matches the SecurityRonin README footer

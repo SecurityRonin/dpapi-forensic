@@ -63,20 +63,24 @@ the library never fabricates plausible-but-wrong plaintext.
 
 ## Status
 
-Step 1 (this release) ships the byte-oriented `dpapi-core` primitives, validated
-by the unit tests carried over from `memory-forensic`. The `dpapi-forensic`
-crate is a stub that re-exports `dpapi-core` and documents the roadmap.
+`dpapi-core` ships the byte-oriented primitives — `blob`, `decrypt`, `chrome`,
+`masterkey` (parse `%APPDATA%\Microsoft\Protect\<SID>\<GUID>` and derive the user
+master key from the password via SHA1 → PBKDF2-HMAC), `credential`, `vault`, and
+`wifi` — validated by the unit tests carried over from `memory-forensic` and
+against impacket vectors.
 
-Step 2 (planned):
+`dpapi-forensic` ships the **`dpapi4n6` CLI** per the fleet `*4n6` pattern: a
+path-taking tool over `dpapi-core` whose `browser` / `credman` / `vault` / `wifi`
+subcommands each take **explicit artifact paths** plus a hex master key and emit
+plain typed output (`StoreResult` / `CliReport`, text or `--json`). A store that
+cannot be unlocked surfaces as a typed `Locked { store, mk_guid }` with a
+non-zero exit — never a guessed secret.
 
-- **`masterkey.rs`** in `dpapi-core` — parse master-key files
-  (`%APPDATA%\Microsoft\Protect\<SID>\<GUID>`) and derive the key-protection key
-  from the user password (SHA1 → PBKDF2-HMAC) or the domain backup key.
-- **`dpapi-forensic`** auditor — enumerate and decrypt Chrome/Edge passwords +
-  cookie key, Credential Manager, Vault, and Wi-Fi keys on an acquired
-  filesystem, emitting graded `forensicnomicon` findings.
-- **`dpapi4n6`** CLI per the fleet `*4n6` pattern, plus a tag-driven release
-  workflow.
+Not yet built (see [`docs/PRD.md`](docs/PRD.md) §3/§5 and
+`docs/plans/dpapi-step2.md`): filesystem-tree enumeration of profiles/stores, and
+re-expressing the CLI's output as graded `forensicnomicon::report` findings —
+`dpapi-forensic` does not yet depend on `forensicnomicon`. Paths are supplied by
+an orchestrator or `4n6mount` today.
 
 ---
 
