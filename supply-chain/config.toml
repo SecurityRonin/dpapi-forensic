@@ -17,10 +17,10 @@ url = "https://raw.githubusercontent.com/google/rust-crate-audits/main/audits.to
 url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 
 [policy.dpapi-core]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [policy.dpapi-forensic]
-audit-as-crates-io = true
+audit-as-crates-io = false
 
 [[exemptions.aead]]
 version = "0.5.2"
@@ -108,14 +108,6 @@ criteria = "safe-to-deploy"
 
 [[exemptions.digest]]
 version = "0.10.7"
-criteria = "safe-to-deploy"
-
-[[exemptions.dpapi-core]]
-version = "0.2.0"
-criteria = "safe-to-deploy"
-
-[[exemptions.dpapi-forensic]]
-version = "0.2.1"
 criteria = "safe-to-deploy"
 
 [[exemptions.forensicnomicon]]
